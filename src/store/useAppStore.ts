@@ -39,6 +39,8 @@ interface AppState {
   addMedia: (media: MediaItem) => void;
   updateMedia: (id: string, updates: Partial<MediaItem>) => void;
   deleteMedia: (id: string) => void;
+  batchUpdateMedia: (ids: string[], updates: Partial<MediaItem>) => void;
+  batchDeleteMedia: (ids: string[]) => void;
   
   addScreenGroup: (group: ScreenGroup) => void;
   updateScreenGroup: (id: string, updates: Partial<ScreenGroup>) => void;
@@ -97,6 +99,16 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   deleteMedia: (id) => set((state) => ({
     mediaItems: state.mediaItems.filter((m) => m.id !== id),
+  })),
+
+  batchUpdateMedia: (ids, updates) => set((state) => ({
+    mediaItems: state.mediaItems.map((m) =>
+      ids.includes(m.id) ? { ...m, ...updates } : m
+    ),
+  })),
+
+  batchDeleteMedia: (ids) => set((state) => ({
+    mediaItems: state.mediaItems.filter((m) => !ids.includes(m.id)),
   })),
 
   addScreenGroup: (group) => set((state) => ({

@@ -32,6 +32,7 @@ import {
 } from '@ant-design/icons';
 import { useAppStore } from '../store/useAppStore';
 import { PlaylistItem } from '../types';
+import { getImageStyle } from '../utils/cropUtils';
 
 const { TabPane } = Tabs;
 
@@ -181,7 +182,7 @@ export default function Preview() {
                       style={{
                         width: '100%',
                         height: '100%',
-                        objectFit: 'cover',
+                        ...getImageStyle(currentMedia.crop),
                       }}
                     />
                     {currentMedia.type === 'video' && (

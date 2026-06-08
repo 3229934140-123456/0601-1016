@@ -36,6 +36,7 @@ import {
 import { useAppStore } from '../store/useAppStore';
 import { Playlist } from '../types';
 import dayjs from 'dayjs';
+import { getCropStyle, getImageStyle } from '../utils/cropUtils';
 
 export default function PlaylistPage() {
   const {
@@ -368,13 +369,40 @@ export default function PlaylistPage() {
                             <DragOutlined /> {index + 1}
                           </div>
                           {media && (
-                            <Image
-                              width={80}
-                              height={45}
-                              src={media.thumbnail}
-                              style={{ borderRadius: 4, objectFit: 'cover', marginRight: 12 }}
-                              preview={{ src: media.url }}
-                            />
+                            <div
+                              style={{
+                                width: 80,
+                                height: 45,
+                                overflow: 'hidden',
+                                borderRadius: 4,
+                                marginRight: 12,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: '#f0f0f0',
+                                flexShrink: 0,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  overflow: 'hidden',
+                                  ...getCropStyle(media.crop),
+                                }}
+                              >
+                                <Image
+                                  src={media.thumbnail}
+                                  alt={media.name}
+                                  style={{
+                                    width: '100%',
+                                    height: '100%',
+                                    ...getImageStyle(media.crop),
+                                  }}
+                                  preview={{ src: media.url }}
+                                />
+                              </div>
+                            </div>
                           )}
                           <div style={{ flex: 1 }}>
                             <div style={{ fontWeight: 500 }}>{item.mediaName || item.mediaId}</div>

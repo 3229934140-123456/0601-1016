@@ -30,12 +30,13 @@ import {
 import dayjs from 'dayjs';
 import { useAppStore } from '../store/useAppStore';
 import { EmergencyBroadcast } from '../types';
+import { generatePublishResults, calculatePublishStats } from '../utils/publishUtils';
 
 const { RangePicker } = DatePicker;
 const { TextArea } = Input;
 
 export default function Emergency() {
-  const { emergencyBroadcasts, screenGroups, addEmergency, updateEmergency, deleteEmergency, addPublishRecord } = useAppStore();
+  const { emergencyBroadcasts, screenGroups, screens, addEmergency, updateEmergency, deleteEmergency, addPublishRecord } = useAppStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingEmergency, setEditingEmergency] = useState<EmergencyBroadcast | null>(null);
   const [form] = Form.useForm();
@@ -148,10 +149,10 @@ export default function Emergency() {
       startTime: new Date().toISOString(),
     });
     if (emergency) {
-      const groupNames = emergency.screenGroupIds
-        .map((gid) => screenGroups.find((g) => g.id === gid)?.name)
-        .filter(Boolean)
-        .join('、');
+      const groups = generatePublishResults(screenGroups, screens, emergency.screenGroupIds);
+      const stats = calculatePublishStats(groups);
+      const groupNames = groups.map((g) => g.groupName).join('、');
+
       addPublishRecord({
         id: `pr${Date.now()}`,
         type: 'emergency',
@@ -160,8 +161,13 @@ export default function Emergency() {
         screenGroupName: groupNames || '多屏幕组',
         publishTime: new Date().toISOString(),
         operator: '当前用户',
-        status: 'success',
-        detail: '紧急插播已发布',
+        status: stats.overallStatus,
+        detail: `紧急插播已发布（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`,
+        operationType: 'publish',
+        groups,
+        successCount: stats.successCount,
+        failedCount: stats.failedCount,
+        totalCount: stats.totalCount,
       });
     }
     message.success('已立即发布');
@@ -174,10 +180,10 @@ export default function Emergency() {
       endTime: new Date().toISOString(),
     });
     if (emergency) {
-      const groupNames = emergency.screenGroupIds
-        .map((gid) => screenGroups.find((g) => g.id === gid)?.name)
-        .filter(Boolean)
-        .join('、');
+      const groups = generatePublishResults(screenGroups, screens, emergency.screenGroupIds);
+      const stats = calculatePublishStats(groups);
+      const groupNames = groups.map((g) => g.groupName).join('、');
+
       addPublishRecord({
         id: `pr${Date.now()}`,
         type: 'emergency',
@@ -186,8 +192,13 @@ export default function Emergency() {
         screenGroupName: groupNames || '多屏幕组',
         publishTime: new Date().toISOString(),
         operator: '当前用户',
-        status: 'success',
-        detail: '紧急插播已停止',
+        status: stats.overallStatus,
+        detail: `紧急插播已停止（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`,
+        operationType: 'stop',
+        groups,
+        successCount: stats.successCount,
+        failedCount: stats.failedCount,
+        totalCount: stats.totalCount,
       });
     }
     message.success('已停止播放');

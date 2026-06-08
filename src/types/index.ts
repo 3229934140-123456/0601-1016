@@ -105,6 +105,20 @@ export interface ApprovalRecord {
   comment?: string;
 }
 
+export interface PublishScreenResult {
+  screenId: string;
+  screenName: string;
+  status: 'success' | 'failed' | 'publishing';
+  errorMessage?: string;
+  finishedTime?: string;
+}
+
+export interface PublishGroupResult {
+  groupId: string;
+  groupName: string;
+  screens: PublishScreenResult[];
+}
+
 export interface PublishRecord {
   id: string;
   type: 'playlist' | 'schedule' | 'emergency';
@@ -113,8 +127,13 @@ export interface PublishRecord {
   screenGroupName: string;
   publishTime: string;
   operator: string;
-  status: 'success' | 'failed' | 'publishing';
+  status: 'success' | 'failed' | 'publishing' | 'partial';
   detail?: string;
+  operationType?: 'publish' | 'stop';
+  groups?: PublishGroupResult[];
+  successCount?: number;
+  failedCount?: number;
+  totalCount?: number;
 }
 
 export type WindowKey = 

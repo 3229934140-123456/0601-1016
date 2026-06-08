@@ -18,6 +18,9 @@ import {
   Select,
   Badge,
   Slider,
+  Checkbox,
+  Dropdown,
+  MenuProps,
 } from 'antd';
 import {
   UploadOutlined,
@@ -27,45 +30,22 @@ import {
   PictureOutlined,
   VideoCameraOutlined,
   ExclamationCircleOutlined,
+  DownOutlined,
+  TagOutlined,
+  ClockCircleOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import dayjs from 'dayjs';
 import { useAppStore } from '../store/useAppStore';
 import { MediaItem, MediaType, CropRatio, CropConfig } from '../types';
+import { getCropStyle, getImageStyle, ratioList } from '../utils/cropUtils';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
 
-const ratioMap: Record<CropRatio, number> = {
-  '16:9': 16 / 9,
-  '9:16': 9 / 16,
-  '1:1': 1,
-  '4:3': 4 / 3,
-  'free': 0,
-};
-
-function getCropStyle(crop?: CropConfig): React.CSSProperties {
-  if (!crop || crop.ratio === 'free') {
-    return {};
-  }
-  const ratio = ratioMap[crop.ratio];
-  return {
-    aspectRatio: `${ratio}`,
-  };
-}
-
-function getImageStyle(crop?: CropConfig): React.CSSProperties {
-  if (!crop) {
-    return { objectFit: 'cover' as const };
-  }
-  return {
-    objectFit: 'cover' as const,
-    objectPosition: `${crop.positionX}% ${crop.positionY}%`,
-  };
-}
-
 export default function MediaLibrary() {
-  const { mediaItems, addMedia, updateMedia, deleteMedia } = useAppStore();
+  const { mediaItems, addMedia, updateMedia, deleteMedia, batchUpdateMedia, batchDeleteMedia } = useAppStore();
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState<'all' | MediaType>('all');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired' | 'draft'>('all');
@@ -74,6 +54,11 @@ export default function MediaLibrary() {
   const [editingMedia, setEditingMedia] = useState<MediaItem | null>(null);
   const [form] = Form.useForm();
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchModalVisible, setBatchModalVisible] = useState(false);
+  const [batchActionType, setBatchActionType] = useState<'tags' | 'validity' | 'status'>('tags');
+  const [batchForm] = Form.useForm();
 
   const [cropRatio, setCropRatio] = useState<CropRatio>('16:9');
   const [cropPosX, setCropPosX] = useState(50);
@@ -156,6 +141,80 @@ export default function MediaLibrary() {
     message.success('删除成功');
   };
 
+  const handleSelectAll = () => {
+    if (selectedIds.length === filteredMedia.length) {
+      setSelectedIds([]);
+    } else {
+      setSelectedIds(filteredMedia.map((m) => m.id));
+    }
+  };
+
+  const handleSelectItem = (id: string) => {
+    if (selectedIds.includes(id)) {
+      setSelectedIds(selectedIds.filter((i) => i !== id));
+    } else {
+      setSelectedIds([...selectedIds, id]);
+    }
+  };
+
+  const openBatchTagModal = () => {
+    setBatchActionType('tags');
+    batchForm.resetFields();
+    setBatchModalVisible(true);
+  };
+
+  const openBatchValidityModal = () => {
+    setBatchActionType('validity');
+    batchForm.resetFields();
+    setBatchModalVisible(true);
+  };
+
+  const openBatchDraftModal = () => {
+    Modal.confirm({
+      title: '批量标记为草稿',
+      content: `确定将选中的 ${selectedIds.length} 个素材标记为草稿吗?`,
+      onOk: () => {
+        batchUpdateMedia(selectedIds, { status: 'draft' });
+        message.success(`已将 ${selectedIds.length} 个素材标记为草稿`);
+        setSelectedIds([]);
+      },
+    });
+  };
+
+  const handleBatchDelete = () => {
+    Modal.confirm({
+      title: '批量删除',
+      content: `确定删除选中的 ${selectedIds.length} 个素材吗?此操作不可恢复。`,
+      okType: 'danger',
+      onOk: () => {
+        batchDeleteMedia(selectedIds);
+        message.success(`已删除 ${selectedIds.length} 个素材`);
+        setSelectedIds([]);
+      },
+    });
+  };
+
+  const handleBatchSubmit = () => {
+    batchForm.validateFields().then((values) => {
+      if (batchActionType === 'tags') {
+        const newTags = values.tags || [];
+        const selectedMedia = mediaItems.filter((m) => selectedIds.includes(m.id));
+        selectedMedia.forEach((media) => {
+          const mergedTags = [...new Set([...media.tags, ...newTags])];
+          updateMedia(media.id, { tags: mergedTags });
+        });
+        message.success(`已为 ${selectedIds.length} 个素材添加标签`);
+      } else if (batchActionType === 'validity') {
+        const validFrom = values.validRange[0].format('YYYY-MM-DD');
+        const validTo = values.validRange[1].format('YYYY-MM-DD');
+        batchUpdateMedia(selectedIds, { validFrom, validTo });
+        message.success(`已更新 ${selectedIds.length} 个素材的有效期`);
+      }
+      setBatchModalVisible(false);
+      setSelectedIds([]);
+    });
+  };
+
   const uploadProps: UploadProps = {
     name: 'file',
     multiple: true,
@@ -221,14 +280,6 @@ export default function MediaLibrary() {
     positionX: cropPosX,
     positionY: cropPosY,
   });
-
-  const ratioList: { value: CropRatio; label: string }[] = [
-    { value: '16:9', label: '横屏 16:9' },
-    { value: '9:16', label: '竖屏 9:16' },
-    { value: '1:1', label: '方形 1:1' },
-    { value: '4:3', label: '4:3' },
-    { value: 'free', label: '原始比例' },
-  ];
 
   return (
     <div>
@@ -309,6 +360,52 @@ export default function MediaLibrary() {
         </Col>
       </Row>
 
+      {selectedIds.length > 0 && (
+        <Card size="small" style={{ marginBottom: 16, background: '#e6f7ff', borderColor: '#91d5ff' }}>
+          <Space size="large">
+            <Checkbox
+              checked={selectedIds.length === filteredMedia.length && filteredMedia.length > 0}
+              indeterminate={selectedIds.length > 0 && selectedIds.length < filteredMedia.length}
+              onChange={handleSelectAll}
+            >
+              全选
+            </Checkbox>
+            <span style={{ color: '#1890ff', fontWeight: 500 }}>
+              已选择 {selectedIds.length} 个素材
+            </span>
+            <Button
+              size="small"
+              icon={<TagOutlined />}
+              onClick={openBatchTagModal}
+            >
+              添加标签
+            </Button>
+            <Button
+              size="small"
+              icon={<ClockCircleOutlined />}
+              onClick={openBatchValidityModal}
+            >
+              改有效期
+            </Button>
+            <Button
+              size="small"
+              icon={<FileTextOutlined />}
+              onClick={openBatchDraftModal}
+            >
+              设为草稿
+            </Button>
+            <Button
+              size="small"
+              danger
+              icon={<DeleteOutlined />}
+              onClick={handleBatchDelete}
+            >
+              删除
+            </Button>
+          </Space>
+        </Card>
+      )}
+
       <div style={{ marginBottom: 12 }}>
         <Space wrap>
           <span style={{ color: '#666' }}>热门标签:</span>
@@ -381,6 +478,22 @@ export default function MediaLibrary() {
                         <ScissorOutlined /> {media.crop.ratio}
                       </Tag>
                     )}
+                    <Checkbox
+                      checked={selectedIds.includes(media.id)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        handleSelectItem(media.id);
+                      }}
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        background: 'rgba(255,255,255,0.9)',
+                        borderRadius: 4,
+                        padding: '2px 4px',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
                     {media.type === 'video' && media.duration && (
                       <Tag
                         color="black"
@@ -588,6 +701,42 @@ export default function MediaLibrary() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        title={batchActionType === 'tags' ? '批量添加标签' : '批量修改有效期'}
+        open={batchModalVisible}
+        onOk={handleBatchSubmit}
+        onCancel={() => setBatchModalVisible(false)}
+        width={500}
+        okText="确认批量操作"
+      >
+        <div style={{ marginBottom: 16, padding: 12, background: '#e6f7ff', borderRadius: 6 }}>
+          <div style={{ color: '#1890ff', fontSize: 13 }}>
+            已选择 <strong>{selectedIds.length}</strong> 个素材，将对以下内容执行操作:
+          </div>
+          <div style={{ marginTop: 8, color: '#666', fontSize: 12, maxHeight: 100, overflow: 'auto' }}>
+            {mediaItems
+              .filter((m) => selectedIds.includes(m.id))
+              .map((m) => (
+                <div key={m.id} style={{ padding: '2px 0' }}>
+                  · {m.name}
+                </div>
+              ))}
+          </div>
+        </div>
+        <Form form={batchForm} layout="vertical">
+          {batchActionType === 'tags' && (
+            <Form.Item name="tags" label="添加标签" rules={[{ required: true, message: '请输入标签' }]}>
+              <Select mode="tags" placeholder="输入标签后回车添加" />
+            </Form.Item>
+          )}
+          {batchActionType === 'validity' && (
+            <Form.Item name="validRange" label="新有效期" rules={[{ required: true, message: '请选择有效期' }]}>
+              <RangePicker style={{ width: '100%' }} />
+            </Form.Item>
+          )}
+        </Form>
       </Modal>
 
       <Modal

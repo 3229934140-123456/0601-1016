@@ -15,6 +15,8 @@ import {
   Statistic,
   Tooltip,
   message,
+  List,
+  Divider,
 } from 'antd';
 import {
   SearchOutlined,
@@ -27,15 +29,19 @@ import {
   BellOutlined,
   EyeOutlined,
   RedoOutlined,
+  ExclamationCircleOutlined,
+  StopOutlined,
+  PlayCircleOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useAppStore } from '../store/useAppStore';
-import { PublishRecord } from '../types';
+import { PublishRecord, PublishGroupResult } from '../types';
+import { generatePublishResults, calculatePublishStats } from '../utils/publishUtils';
 
 const { RangePicker } = DatePicker;
 
 export default function PublishRecordPage() {
-  const { publishRecords, playlists, setCurrentWindow, setSelectedPlaylistId, addPublishRecord, updatePublishRecord } = useAppStore();
+  const { publishRecords, playlists, screenGroups, screens, setCurrentWindow, setSelectedPlaylistId, addPublishRecord, updatePublishRecord } = useAppStore();
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -65,18 +71,31 @@ export default function PublishRecordPage() {
     success: 'green',
     failed: 'red',
     publishing: 'blue',
+    partial: 'orange',
   };
 
   const statusTextMap: Record<string, string> = {
     success: '发布成功',
     failed: '发布失败',
     publishing: '发布中',
+    partial: '部分成功',
   };
 
   const statusIconMap: Record<string, React.ReactNode> = {
     success: <CheckCircleOutlined />,
     failed: <CloseCircleOutlined />,
     publishing: <LoadingOutlined />,
+    partial: <ExclamationCircleOutlined />,
+  };
+
+  const operationTypeTextMap: Record<string, string> = {
+    publish: '发布',
+    stop: '停止',
+  };
+
+  const operationTypeIconMap: Record<string, React.ReactNode> = {
+    publish: <PlayCircleOutlined />,
+    stop: <StopOutlined />,
   };
 
   const typeIconMap: Record<string, React.ReactNode> = {
@@ -103,12 +122,40 @@ export default function PublishRecordPage() {
     }
   };
 
-  const handleRepublish = (record: PublishRecord) => {
+  const handleRepublish = (record: PublishRecord, failedOnly: boolean = false) => {
+    const actionText = failedOnly ? '重发失败屏幕' : '重新发布';
     Modal.confirm({
-      title: '重新发布',
-      content: `确定要重新发布「${record.targetName}」吗?`,
+      title: actionText,
+      content: failedOnly
+        ? `确定只重新发布「${record.targetName}」的失败屏幕吗?`
+        : `确定要重新发布「${record.targetName}」吗?`,
       onOk: () => {
         const newRecordId = `pr${Date.now()}`;
+
+        let groups: PublishGroupResult[] | undefined;
+        if (record.groups && record.groups.length > 0) {
+          if (failedOnly) {
+            groups = record.groups.map((group) => ({
+              ...group,
+              screens: group.screens.map((screen) => {
+                if (screen.status === 'failed') {
+                  return { ...screen, status: 'publishing' as const, errorMessage: undefined };
+                }
+                return screen;
+              }),
+            }));
+          } else {
+            groups = record.groups.map((group) => ({
+              ...group,
+              screens: group.screens.map((screen) => ({
+                ...screen,
+                status: 'publishing' as const,
+                errorMessage: undefined,
+              })),
+            }));
+          }
+        }
+
         addPublishRecord({
           id: newRecordId,
           type: record.type,
@@ -118,14 +165,50 @@ export default function PublishRecordPage() {
           publishTime: new Date().toISOString(),
           operator: '当前用户',
           status: 'publishing',
-          detail: '正在发布中...',
+          detail: failedOnly ? '正在重发失败屏幕...' : '正在发布中...',
+          operationType: 'publish',
+          groups,
+          successCount: 0,
+          failedCount: 0,
+          totalCount: record.totalCount,
         });
         message.success('已发起重新发布');
+
         setTimeout(() => {
-          updatePublishRecord(newRecordId, {
-            status: 'success',
-            detail: '重新发布成功',
-          });
+          let finalGroups: PublishGroupResult[] | undefined;
+          if (groups) {
+            finalGroups = groups.map((group) => ({
+              ...group,
+              screens: group.screens.map((screen) => {
+                if (screen.status === 'publishing') {
+                  const screenData = screens.find((s) => s.id === screen.screenId);
+                  const isSuccess = screenData?.status === 'online';
+                  return {
+                    ...screen,
+                    status: isSuccess ? ('success' as const) : ('failed' as const),
+                    errorMessage: isSuccess ? undefined : '屏幕离线，发布失败',
+                    finishedTime: new Date().toISOString(),
+                  };
+                }
+                return screen;
+              }),
+            }));
+            const stats = calculatePublishStats(finalGroups);
+            updatePublishRecord(newRecordId, {
+              status: stats.overallStatus,
+              detail: failedOnly
+                ? `重发失败屏幕完成（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`
+                : `重新发布成功（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`,
+              groups: finalGroups,
+              successCount: stats.successCount,
+              failedCount: stats.failedCount,
+            });
+          } else {
+            updatePublishRecord(newRecordId, {
+              status: 'success',
+              detail: failedOnly ? '重发失败屏幕完成' : '重新发布成功',
+            });
+          }
         }, 1500);
       },
     });
@@ -133,7 +216,21 @@ export default function PublishRecordPage() {
 
   const columns = [
     {
-      title: '类型',
+      title: '操作类型',
+      dataIndex: 'operationType',
+      key: 'operationType',
+      width: 100,
+      render: (type: string) => {
+        const opType = type || 'publish';
+        return (
+          <Tag color={opType === 'stop' ? 'default' : 'blue'}>
+            {operationTypeIconMap[opType]} {operationTypeTextMap[opType]}
+          </Tag>
+        );
+      },
+    },
+    {
+      title: '内容类型',
       dataIndex: 'type',
       key: 'type',
       width: 100,
@@ -169,6 +266,25 @@ export default function PublishRecordPage() {
       ),
     },
     {
+      title: '发布结果',
+      key: 'result',
+      width: 140,
+      render: (_: any, record: PublishRecord) => {
+        if (record.successCount !== undefined && record.totalCount !== undefined) {
+          return (
+            <Space size="small">
+              <Tag color="green">成功 {record.successCount}</Tag>
+              {record.failedCount !== undefined && record.failedCount > 0 && (
+                <Tag color="red">失败 {record.failedCount}</Tag>
+              )}
+              <span style={{ color: '#999', fontSize: 12 }}>/ {record.totalCount}台</span>
+            </Space>
+          );
+        }
+        return <span style={{ color: '#999' }}>-</span>;
+      },
+    },
+    {
       title: '操作人',
       dataIndex: 'operator',
       key: 'operator',
@@ -184,7 +300,7 @@ export default function PublishRecordPage() {
     {
       title: '操作',
       key: 'actions',
-      width: 200,
+      width: 220,
       render: (_: any, record: PublishRecord) => (
         <Space size="small">
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handleViewDetail(record)}>
@@ -293,40 +409,136 @@ export default function PublishRecordPage() {
           }}>
             重新发布
           </Button>,
+          selectedRecord?.failedCount && selectedRecord.failedCount > 0 ? (
+            <Button key="republishFailed" danger onClick={() => {
+              if (selectedRecord) handleRepublish(selectedRecord, true);
+            }}>
+              只重发失败屏幕
+            </Button>
+          ) : null,
         ]}
-        width={600}
+        width={700}
       >
         {selectedRecord && (
-          <Descriptions column={1} bordered size="small">
-            <Descriptions.Item label="内容类型">
-              <Space>
-                {typeIconMap[selectedRecord.type]}
-                {typeTextMap[selectedRecord.type]}
-              </Space>
-            </Descriptions.Item>
-            <Descriptions.Item label="内容名称">
-              {selectedRecord.targetName}
-            </Descriptions.Item>
-            <Descriptions.Item label="屏幕组">
-              {selectedRecord.screenGroupName}
-            </Descriptions.Item>
-            <Descriptions.Item label="发布状态">
-              <Tag color={statusColorMap[selectedRecord.status]} icon={statusIconMap[selectedRecord.status]}>
-                {statusTextMap[selectedRecord.status]}
-              </Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="操作人">
-              {selectedRecord.operator}
-            </Descriptions.Item>
-            <Descriptions.Item label="发布时间">
-              {dayjs(selectedRecord.publishTime).format('YYYY-MM-DD HH:mm:ss')}
-            </Descriptions.Item>
-            {selectedRecord.detail && (
-              <Descriptions.Item label="详细信息">
-                <span style={{ color: '#ff4d4f' }}>{selectedRecord.detail}</span>
+          <div>
+            <Descriptions column={2} bordered size="small">
+              <Descriptions.Item label="操作类型">
+                <Tag color={selectedRecord.operationType === 'stop' ? 'default' : 'blue'}>
+                  {operationTypeIconMap[selectedRecord.operationType || 'publish']}
+                  {operationTypeTextMap[selectedRecord.operationType || 'publish']}
+                </Tag>
               </Descriptions.Item>
+              <Descriptions.Item label="内容类型">
+                <Space>
+                  {typeIconMap[selectedRecord.type]}
+                  {typeTextMap[selectedRecord.type]}
+                </Space>
+              </Descriptions.Item>
+              <Descriptions.Item label="内容名称" span={2}>
+                {selectedRecord.targetName}
+              </Descriptions.Item>
+              <Descriptions.Item label="屏幕组" span={2}>
+                {selectedRecord.screenGroupName}
+              </Descriptions.Item>
+              <Descriptions.Item label="发布状态">
+                <Tag color={statusColorMap[selectedRecord.status]} icon={statusIconMap[selectedRecord.status]}>
+                  {statusTextMap[selectedRecord.status]}
+                </Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="操作人">
+                {selectedRecord.operator}
+              </Descriptions.Item>
+              <Descriptions.Item label="发布时间" span={2}>
+                {dayjs(selectedRecord.publishTime).format('YYYY-MM-DD HH:mm:ss')}
+              </Descriptions.Item>
+            </Descriptions>
+
+            {selectedRecord.successCount !== undefined && selectedRecord.totalCount !== undefined && (
+              <>
+                <Divider style={{ margin: '16px 0' }} />
+                <div style={{ marginBottom: 12 }}>
+                  <strong>发布结果统计</strong>
+                </div>
+                <Row gutter={16} style={{ marginBottom: 16 }}>
+                  <Col span={8}>
+                    <Card size="small">
+                      <Statistic title="成功" value={selectedRecord.successCount} valueStyle={{ color: '#52c41a' }} prefix={<CheckCircleOutlined />} />
+                    </Card>
+                  </Col>
+                  <Col span={8}>
+                    <Card size="small">
+                      <Statistic title="失败" value={selectedRecord.failedCount || 0} valueStyle={{ color: '#ff4d4f' }} prefix={<CloseCircleOutlined />} />
+                    </Card>
+                  </Col>
+                  <Col span={8}>
+                    <Card size="small">
+                      <Statistic title="总计" value={selectedRecord.totalCount} prefix={<HistoryOutlined />} />
+                    </Card>
+                  </Col>
+                </Row>
+              </>
             )}
-          </Descriptions>
+
+            {selectedRecord.groups && selectedRecord.groups.length > 0 && (
+              <>
+                <Divider style={{ margin: '16px 0' }} />
+                <div style={{ marginBottom: 12 }}>
+                  <strong>各屏幕发布详情</strong>
+                </div>
+                <div style={{ maxHeight: 300, overflow: 'auto' }}>
+                  {selectedRecord.groups.map((group) => (
+                    <div key={group.groupId} style={{ marginBottom: 16 }}>
+                      <div style={{ fontWeight: 500, marginBottom: 8, color: '#1890ff' }}>
+                        {group.groupName}
+                      </div>
+                      <List
+                        size="small"
+                        bordered
+                        dataSource={group.screens}
+                        renderItem={(screen) => (
+                          <List.Item
+                            style={{
+                              background: screen.status === 'failed' ? '#fff1f0' : 'transparent',
+                            }}
+                          >
+                            <Space style={{ width: '100%' }}>
+                              {statusIconMap[screen.status]}
+                              <span style={{ flex: 1 }}>{screen.screenName}</span>
+                              <Tag color={statusColorMap[screen.status]}>
+                                {statusTextMap[screen.status]}
+                              </Tag>
+                              {screen.errorMessage && (
+                                <span style={{ color: '#ff4d4f', fontSize: 12 }}>
+                                  {screen.errorMessage}
+                                </span>
+                              )}
+                              {screen.finishedTime && (
+                                <span style={{ color: '#999', fontSize: 12 }}>
+                                  {dayjs(screen.finishedTime).format('HH:mm:ss')}
+                                </span>
+                              )}
+                            </Space>
+                          </List.Item>
+                        )}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {selectedRecord.detail && (
+              <>
+                <Divider style={{ margin: '16px 0' }} />
+                <div>
+                  <strong>详细信息：</strong>
+                  <span style={{ color: selectedRecord.status === 'failed' ? '#ff4d4f' : '#666' }}>
+                    {selectedRecord.detail}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
         )}
       </Modal>
     </div>
