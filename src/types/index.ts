@@ -1,5 +1,13 @@
 export type MediaType = 'image' | 'video';
 
+export type CropRatio = '16:9' | '9:16' | '1:1' | '4:3' | 'free';
+
+export interface CropConfig {
+  ratio: CropRatio;
+  positionX: number;
+  positionY: number;
+}
+
 export interface MediaItem {
   id: string;
   name: string;
@@ -14,6 +22,7 @@ export interface MediaItem {
   usageCount: number;
   createdAt: string;
   status: 'active' | 'expired' | 'draft';
+  crop?: CropConfig;
 }
 
 export interface Screen {

@@ -35,7 +35,7 @@ import { PublishRecord } from '../types';
 const { RangePicker } = DatePicker;
 
 export default function PublishRecordPage() {
-  const { publishRecords, playlists, setCurrentWindow, setSelectedPlaylistId } = useAppStore();
+  const { publishRecords, playlists, setCurrentWindow, setSelectedPlaylistId, addPublishRecord, updatePublishRecord } = useAppStore();
   const [searchText, setSearchText] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -108,8 +108,25 @@ export default function PublishRecordPage() {
       title: '重新发布',
       content: `确定要重新发布「${record.targetName}」吗?`,
       onOk: () => {
-        // 模拟重新发布
-        message.success('已重新发布（演示）');
+        const newRecordId = `pr${Date.now()}`;
+        addPublishRecord({
+          id: newRecordId,
+          type: record.type,
+          targetId: record.targetId,
+          targetName: record.targetName,
+          screenGroupName: record.screenGroupName,
+          publishTime: new Date().toISOString(),
+          operator: '当前用户',
+          status: 'publishing',
+          detail: '正在发布中...',
+        });
+        message.success('已发起重新发布');
+        setTimeout(() => {
+          updatePublishRecord(newRecordId, {
+            status: 'success',
+            detail: '重新发布成功',
+          });
+        }, 1500);
       },
     });
   };

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import {
   Card,
   Row,
@@ -14,10 +14,10 @@ import {
   message,
   Popconfirm,
   Statistic,
-  Tabs,
   Image,
   Select,
   Badge,
+  Slider,
 } from 'antd';
 import {
   UploadOutlined,
@@ -27,16 +27,42 @@ import {
   PictureOutlined,
   VideoCameraOutlined,
   ExclamationCircleOutlined,
-  PlusOutlined,
 } from '@ant-design/icons';
 import type { UploadProps } from 'antd';
 import dayjs from 'dayjs';
 import { useAppStore } from '../store/useAppStore';
-import { MediaItem, MediaType } from '../types';
+import { MediaItem, MediaType, CropRatio, CropConfig } from '../types';
 
 const { RangePicker } = DatePicker;
 const { Search } = Input;
-const { TabPane } = Tabs;
+
+const ratioMap: Record<CropRatio, number> = {
+  '16:9': 16 / 9,
+  '9:16': 9 / 16,
+  '1:1': 1,
+  '4:3': 4 / 3,
+  'free': 0,
+};
+
+function getCropStyle(crop?: CropConfig): React.CSSProperties {
+  if (!crop || crop.ratio === 'free') {
+    return {};
+  }
+  const ratio = ratioMap[crop.ratio];
+  return {
+    aspectRatio: `${ratio}`,
+  };
+}
+
+function getImageStyle(crop?: CropConfig): React.CSSProperties {
+  if (!crop) {
+    return { objectFit: 'cover' as const };
+  }
+  return {
+    objectFit: 'cover' as const,
+    objectPosition: `${crop.positionX}% ${crop.positionY}%`,
+  };
+}
 
 export default function MediaLibrary() {
   const { mediaItems, addMedia, updateMedia, deleteMedia } = useAppStore();
@@ -48,6 +74,10 @@ export default function MediaLibrary() {
   const [editingMedia, setEditingMedia] = useState<MediaItem | null>(null);
   const [form] = Form.useForm();
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
+
+  const [cropRatio, setCropRatio] = useState<CropRatio>('16:9');
+  const [cropPosX, setCropPosX] = useState(50);
+  const [cropPosY, setCropPosY] = useState(50);
 
   const filteredMedia = useMemo(() => {
     return mediaItems.filter((item) => {
@@ -96,7 +126,29 @@ export default function MediaLibrary() {
 
   const handleCrop = (media: MediaItem) => {
     setEditingMedia(media);
+    if (media.crop) {
+      setCropRatio(media.crop.ratio);
+      setCropPosX(media.crop.positionX);
+      setCropPosY(media.crop.positionY);
+    } else {
+      setCropRatio('16:9');
+      setCropPosX(50);
+      setCropPosY(50);
+    }
     setCropModalVisible(true);
+  };
+
+  const handleCropSubmit = () => {
+    if (editingMedia) {
+      const cropConfig: CropConfig = {
+        ratio: cropRatio,
+        positionX: cropPosX,
+        positionY: cropPosY,
+      };
+      updateMedia(editingMedia.id, { crop: cropConfig });
+      message.success('裁剪成功');
+      setCropModalVisible(false);
+    }
   };
 
   const handleDelete = (id: string) => {
@@ -157,6 +209,26 @@ export default function MediaLibrary() {
     mediaItems.forEach((m) => m.tags.forEach((t) => tagSet.add(t)));
     return Array.from(tagSet);
   }, [mediaItems]);
+
+  const previewCropStyle = getCropStyle({
+    ratio: cropRatio,
+    positionX: cropPosX,
+    positionY: cropPosY,
+  });
+
+  const previewImgStyle = getImageStyle({
+    ratio: cropRatio,
+    positionX: cropPosX,
+    positionY: cropPosY,
+  });
+
+  const ratioList: { value: CropRatio; label: string }[] = [
+    { value: '16:9', label: '横屏 16:9' },
+    { value: '9:16', label: '竖屏 9:16' },
+    { value: '1:1', label: '方形 1:1' },
+    { value: '4:3', label: '4:3' },
+    { value: 'free', label: '原始比例' },
+  ];
 
   return (
     <div>
@@ -263,13 +335,52 @@ export default function MediaLibrary() {
               <Card
                 hoverable
                 cover={
-                  <div style={{ height: 160, overflow: 'hidden', position: 'relative' }}>
-                    <Image
-                      src={media.thumbnail}
-                      alt={media.name}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      preview={{ src: media.url }}
-                    />
+                  <div
+                    style={{
+                      height: 160,
+                      overflow: 'hidden',
+                      position: 'relative',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: '#f5f5f5',
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        overflow: 'hidden',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        ...getCropStyle(media.crop),
+                      }}
+                    >
+                      <Image
+                        src={media.thumbnail}
+                        alt={media.name}
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          ...getImageStyle(media.crop),
+                        }}
+                        preview={{ src: media.url }}
+                      />
+                    </div>
+                    {media.crop && media.crop.ratio !== 'free' && (
+                      <Tag
+                        color="blue"
+                        style={{
+                          position: 'absolute',
+                          top: 8,
+                          left: 8,
+                          margin: 0,
+                        }}
+                      >
+                        <ScissorOutlined /> {media.crop.ratio}
+                      </Tag>
+                    )}
                     {media.type === 'video' && media.duration && (
                       <Tag
                         color="black"
@@ -290,6 +401,7 @@ export default function MediaLibrary() {
                     key="crop"
                     title="裁剪"
                     onClick={() => handleCrop(media)}
+                    style={{ color: '#1890ff' }}
                   />,
                   <Button
                     type="text"
@@ -356,49 +468,124 @@ export default function MediaLibrary() {
       <Modal
         title="裁剪素材"
         open={cropModalVisible}
-        onOk={() => {
-          message.success('裁剪成功（模拟）');
-          setCropModalVisible(false);
-        }}
+        onOk={handleCropSubmit}
         onCancel={() => setCropModalVisible(false)}
-        width={700}
+        width={680}
+        okText="保存裁剪"
+        maskClosable={false}
       >
         {editingMedia && (
-          <div style={{ textAlign: 'center' }}>
+          <div>
             <div
               style={{
                 width: '100%',
-                height: 360,
-                border: '2px dashed #d9d9d9',
+                height: 320,
+                border: '1px solid #d9d9d9',
                 borderRadius: 8,
-                backgroundImage: `url(${editingMedia.url})`,
-                backgroundSize: 'contain',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat',
+                background: '#f5f5f5',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 20,
+                overflow: 'hidden',
                 position: 'relative',
               }}
             >
               <div
                 style={{
-                  position: 'absolute',
-                  top: '20%',
-                  left: '20%',
-                  width: '60%',
-                  height: '60%',
-                  border: '2px solid #1890ff',
-                  background: 'rgba(24, 144, 255, 0.1)',
-                  cursor: 'move',
+                  width: '100%',
+                  height: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  ...previewCropStyle,
+                  transition: 'all 0.3s ease',
                 }}
-              />
+              >
+                <img
+                  src={editingMedia.url}
+                  alt={editingMedia.name}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    ...previewImgStyle,
+                    transition: 'object-position 0.1s ease',
+                  }}
+                  draggable={false}
+                />
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 12,
+                  right: 12,
+                  padding: '4px 12px',
+                  background: 'rgba(0,0,0,0.6)',
+                  color: '#fff',
+                  borderRadius: 4,
+                  fontSize: 12,
+                }}
+              >
+                {cropRatio}
+              </div>
             </div>
-            <p style={{ marginTop: 16, color: '#999' }}>拖动选框可调整裁剪区域（演示效果）</p>
-            <Space>
-              <Button size="small">16:9</Button>
-              <Button size="small" type="primary">9:16</Button>
-              <Button size="small">4:3</Button>
-              <Button size="small">1:1</Button>
-              <Button size="small">自由</Button>
-            </Space>
+
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 500, marginBottom: 12 }}>选择比例</div>
+              <Space wrap>
+                {ratioList.map((r) => (
+                  <Button
+                    key={r.value}
+                    type={cropRatio === r.value ? 'primary' : 'default'}
+                    onClick={() => setCropRatio(r.value)}
+                    size="small"
+                  >
+                    {r.label}
+                  </Button>
+                ))}
+              </Space>
+            </div>
+
+            {cropRatio !== 'free' && (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: '#666' }}>水平位置</span>
+                    <span style={{ fontSize: 12, color: '#1890ff' }}>{cropPosX}%</span>
+                  </div>
+                  <Slider
+                    min={0}
+                    max={100}
+                    value={cropPosX}
+                    onChange={setCropPosX}
+                    tooltip={{ formatter: (v) => `${v}%` }}
+                  />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, color: '#666' }}>垂直位置</span>
+                    <span style={{ fontSize: 12, color: '#1890ff' }}>{cropPosY}%</span>
+                  </div>
+                  <Slider
+                    min={0}
+                    max={100}
+                    value={cropPosY}
+                    onChange={setCropPosY}
+                    tooltip={{ formatter: (v) => `${v}%` }}
+                  />
+                </div>
+                <div style={{ fontSize: 12, color: '#999', textAlign: 'center' }}>
+                  拖动滑块调整裁剪区域位置，保存后生效
+                </div>
+              </>
+            )}
+
+            {cropRatio === 'free' && (
+              <div style={{ fontSize: 12, color: '#999', textAlign: 'center', padding: '20px 0' }}>
+                原始比例，不进行裁剪
+              </div>
+            )}
           </div>
         )}
       </Modal>

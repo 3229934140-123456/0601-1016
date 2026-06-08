@@ -35,7 +35,7 @@ const { RangePicker } = DatePicker;
 const { TextArea } = Input;
 
 export default function Emergency() {
-  const { emergencyBroadcasts, screenGroups, addEmergency, updateEmergency, deleteEmergency } = useAppStore();
+  const { emergencyBroadcasts, screenGroups, addEmergency, updateEmergency, deleteEmergency, addPublishRecord } = useAppStore();
   const [modalVisible, setModalVisible] = useState(false);
   const [editingEmergency, setEditingEmergency] = useState<EmergencyBroadcast | null>(null);
   const [form] = Form.useForm();
@@ -142,18 +142,54 @@ export default function Emergency() {
   };
 
   const handlePublishNow = (id: string) => {
+    const emergency = emergencyBroadcasts.find((e) => e.id === id);
     updateEmergency(id, {
       status: 'active',
       startTime: new Date().toISOString(),
     });
+    if (emergency) {
+      const groupNames = emergency.screenGroupIds
+        .map((gid) => screenGroups.find((g) => g.id === gid)?.name)
+        .filter(Boolean)
+        .join('、');
+      addPublishRecord({
+        id: `pr${Date.now()}`,
+        type: 'emergency',
+        targetId: id,
+        targetName: emergency.title,
+        screenGroupName: groupNames || '多屏幕组',
+        publishTime: new Date().toISOString(),
+        operator: '当前用户',
+        status: 'success',
+        detail: '紧急插播已发布',
+      });
+    }
     message.success('已立即发布');
   };
 
   const handleStop = (id: string) => {
+    const emergency = emergencyBroadcasts.find((e) => e.id === id);
     updateEmergency(id, {
       status: 'ended',
       endTime: new Date().toISOString(),
     });
+    if (emergency) {
+      const groupNames = emergency.screenGroupIds
+        .map((gid) => screenGroups.find((g) => g.id === gid)?.name)
+        .filter(Boolean)
+        .join('、');
+      addPublishRecord({
+        id: `pr${Date.now()}`,
+        type: 'emergency',
+        targetId: id,
+        targetName: emergency.title,
+        screenGroupName: groupNames || '多屏幕组',
+        publishTime: new Date().toISOString(),
+        operator: '当前用户',
+        status: 'success',
+        detail: '紧急插播已停止',
+      });
+    }
     message.success('已停止播放');
   };
 

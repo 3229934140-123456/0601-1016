@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import {
   Card,
   Calendar,
@@ -37,6 +37,28 @@ import { ScheduleItem } from '../types';
 
 const { RangePicker } = DatePicker;
 
+function isScheduleOnDate(schedule: ScheduleItem, date: Dayjs): boolean {
+  const start = dayjs(schedule.startDate);
+  const end = dayjs(schedule.endDate);
+
+  if (date.isBefore(start, 'day') || date.isAfter(end, 'day')) {
+    return false;
+  }
+
+  switch (schedule.repeat) {
+    case 'none':
+      return date.isSame(start, 'day');
+    case 'daily':
+      return true;
+    case 'weekly':
+      return date.day() === start.day();
+    case 'monthly':
+      return date.date() === start.date();
+    default:
+      return false;
+  }
+}
+
 export default function Schedule() {
   const {
     scheduleItems,
@@ -58,12 +80,16 @@ export default function Schedule() {
       const start = dayjs(schedule.startDate);
       const end = dayjs(schedule.endDate);
       let current = start;
-      while (current.isBefore(end) || current.isSame(end, 'day')) {
-        const key = current.format('YYYY-MM-DD');
-        if (!map.has(key)) {
-          map.set(key, []);
+      let safety = 0;
+      while ((current.isBefore(end, 'day') || current.isSame(end, 'day')) && safety < 1000) {
+        safety++;
+        if (isScheduleOnDate(schedule, current)) {
+          const key = current.format('YYYY-MM-DD');
+          if (!map.has(key)) {
+            map.set(key, []);
+          }
+          map.get(key)!.push(schedule);
         }
-        map.get(key)!.push(schedule);
         current = current.add(1, 'day');
       }
     });
@@ -73,7 +99,7 @@ export default function Schedule() {
   const stats = useMemo(() => {
     const today = dayjs();
     const todayItems = scheduleItems.filter(
-      (s) => !s.isPaused && today.isBetween(dayjs(s.startDate), dayjs(s.endDate), 'day', '[]')
+      (s) => !s.isPaused && isScheduleOnDate(s, today)
     );
     const pausedItems = scheduleItems.filter((s) => s.isPaused);
     const expiredItems = scheduleItems.filter((s) => dayjs(s.endDate).isBefore(today, 'day'));
@@ -86,10 +112,10 @@ export default function Schedule() {
     };
   }, [scheduleItems]);
 
-  const getListData = (value: Dayjs) => {
+  const getListData = useCallback((value: Dayjs) => {
     const dateStr = value.format('YYYY-MM-DD');
     return dateSchedules.get(dateStr) || [];
-  };
+  }, [dateSchedules]);
 
   const handleAdd = () => {
     setEditingSchedule(null);
@@ -172,8 +198,6 @@ export default function Schedule() {
 
   const dateCellRender = (value: Dayjs) => {
     const listData = getListData(value);
-    const isToday = value.isSame(dayjs(), 'day');
-    const isPast = value.isBefore(dayjs(), 'day');
 
     return (
       <ul className="schedule-events" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
@@ -210,6 +234,13 @@ export default function Schedule() {
   const hasExpiredContent = useMemo(() => {
     return scheduleItems.some((s) => dayjs(s.endDate).isBefore(dayjs(), 'day'));
   }, [scheduleItems]);
+
+  const repeatTextMap: Record<string, string> = {
+    none: '不重复',
+    daily: '每天',
+    weekly: '每周',
+    monthly: '每月',
+  };
 
   return (
     <div>
@@ -310,9 +341,13 @@ export default function Schedule() {
                     </div>
                     <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>
                       <ClockCircleOutlined /> {item.startTime} - {item.endTime}
+                      <Tag style={{ marginLeft: 8 }}>{repeatTextMap[item.repeat]}</Tag>
                     </div>
                     <div style={{ fontSize: 12, color: '#666' }}>
                       屏幕组: {item.screenGroupName}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#999', marginTop: 4 }}>
+                      {item.startDate} ~ {item.endDate}
                     </div>
                     <div style={{ marginTop: 8 }}>
                       <Button type="link" size="small" onClick={() => handleEdit(item)}>
@@ -333,6 +368,7 @@ export default function Schedule() {
         onOk={handleSubmit}
         onCancel={() => setModalVisible(false)}
         width={560}
+        maskClosable={false}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="playlistId" label="节目单" rules={[{ required: true, message: '请选择节目单' }]}>
@@ -360,7 +396,7 @@ export default function Schedule() {
             </Select>
           </Form.Item>
 
-          <Form.Item name="dateRange" label="播放日期" rules={[{ required: true, message: '请选择播放日期' }]}>
+          <Form.Item name="dateRange" label="播放日期范围" rules={[{ required: true, message: '请选择播放日期' }]}>
             <RangePicker style={{ width: '100%' }} />
           </Form.Item>
 
@@ -370,10 +406,10 @@ export default function Schedule() {
 
           <Form.Item name="repeat" label="重复方式" rules={[{ required: true }]}>
             <Select>
-              <Select.Option value="none">不重复</Select.Option>
+              <Select.Option value="none">不重复（仅第一天）</Select.Option>
               <Select.Option value="daily">每天</Select.Option>
-              <Select.Option value="weekly">每周</Select.Option>
-              <Select.Option value="monthly">每月</Select.Option>
+              <Select.Option value="weekly">每周（同星期几）</Select.Option>
+              <Select.Option value="monthly">每月（同日期）</Select.Option>
             </Select>
           </Form.Item>
 

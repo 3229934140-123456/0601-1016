@@ -64,6 +64,7 @@ interface AppState {
   rejectRecord: (id: string, approver: string, comment: string) => void;
   
   addPublishRecord: (record: PublishRecord) => void;
+  updatePublishRecord: (id: string, updates: Partial<PublishRecord>) => void;
   
   setSelectedMediaIds: (ids: string[]) => void;
   setSelectedPlaylistId: (id: string | null) => void;
@@ -269,6 +270,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   addPublishRecord: (record) => set((state) => ({
     publishRecords: [record, ...state.publishRecords],
+  })),
+
+  updatePublishRecord: (id, updates) => set((state) => ({
+    publishRecords: state.publishRecords.map((r) =>
+      r.id === id ? { ...r, ...updates } : r
+    ),
   })),
 
   setSelectedMediaIds: (ids) => set({ selectedMediaIds: ids }),
