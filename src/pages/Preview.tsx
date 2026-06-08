@@ -32,7 +32,7 @@ import {
 } from '@ant-design/icons';
 import { useAppStore } from '../store/useAppStore';
 import { PlaylistItem } from '../types';
-import { getImageStyle } from '../utils/cropUtils';
+import { getCropStyle, getImageStyle } from '../utils/cropUtils';
 
 const { TabPane } = Tabs;
 
@@ -175,16 +175,39 @@ export default function Preview() {
               >
                 {currentMedia ? (
                   <>
-                    <Image
-                      src={currentMedia.url}
-                      alt={currentMedia.name}
-                      preview={false}
+                    <div
                       style={{
                         width: '100%',
                         height: '100%',
-                        ...getImageStyle(currentMedia.crop),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: '#000',
                       }}
-                    />
+                    >
+                      <div
+                        style={{
+                          width: '100%',
+                          maxHeight: '100%',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          overflow: 'hidden',
+                          ...getCropStyle(currentMedia.crop),
+                        }}
+                      >
+                        <Image
+                          src={currentMedia.url}
+                          alt={currentMedia.name}
+                          preview={false}
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            ...getImageStyle(currentMedia.crop),
+                          }}
+                        />
+                      </div>
+                    </div>
                     {currentMedia.type === 'video' && (
                       <div
                         style={{
@@ -349,13 +372,31 @@ export default function Preview() {
                             )}
                           </div>
                           {media && (
-                            <Image
-                              width={48}
-                              height={27}
-                              src={media.thumbnail}
-                              style={{ borderRadius: 2, objectFit: 'cover', margin: '0 8px' }}
-                              preview={false}
-                            />
+                            <div
+                              style={{
+                                width: 48,
+                                height: 27,
+                                borderRadius: 2,
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                                margin: '0 8px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: '#f0f0f0',
+                                ...getCropStyle(media.crop),
+                              }}
+                            >
+                              <img
+                                src={media.thumbnail}
+                                alt={media.name}
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  ...getImageStyle(media.crop),
+                                }}
+                              />
+                            </div>
                           )}
                           <div style={{ flex: 1, overflow: 'hidden' }}>
                             <div

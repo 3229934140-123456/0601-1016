@@ -1,4 +1,4 @@
-import { MediaItem, Screen, ScreenGroup, Playlist, ScheduleItem, EmergencyBroadcast, ApprovalRecord, PublishRecord } from '../types';
+import { MediaItem, Screen, ScreenGroup, Playlist, ScheduleItem, EmergencyBroadcast, ApprovalRecord, PublishRecord, PublishGroupResult } from '../types';
 
 const today = new Date();
 const future = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
@@ -306,6 +306,76 @@ export const mockApprovalRecords: ApprovalRecord[] = [
   },
 ];
 
+function generateMockPublishGroups(groupIds: string[]): {
+  groups: PublishGroupResult[];
+  successCount: number;
+  failedCount: number;
+  totalCount: number;
+  overallStatus: 'success' | 'failed' | 'publishing' | 'partial';
+} {
+  const groups: PublishGroupResult[] = groupIds.map((groupId) => {
+    const group = mockScreenGroups.find((g) => g.id === groupId);
+    const groupScreens = mockScreens.filter((s) => group?.screenIds.includes(s.id));
+
+    const screens = groupScreens.map((screen) => {
+      let status: 'success' | 'failed' | 'publishing' = 'success';
+      let errorMessage: string | undefined;
+
+      if (screen.status === 'offline') {
+        status = 'failed';
+        errorMessage = '屏幕离线，发布失败';
+      } else if (screen.status === 'error') {
+        status = 'failed';
+        errorMessage = '屏幕异常，发布失败';
+      }
+
+      return {
+        screenId: screen.id,
+        screenName: screen.name,
+        status,
+        errorMessage,
+        finishedTime: new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
+      };
+    });
+
+    return {
+      groupId,
+      groupName: group?.name || '未知屏幕组',
+      screens,
+    };
+  });
+
+  let successCount = 0;
+  let failedCount = 0;
+  let totalCount = 0;
+
+  groups.forEach((g) => {
+    g.screens.forEach((s) => {
+      totalCount++;
+      if (s.status === 'success') successCount++;
+      if (s.status === 'failed') failedCount++;
+    });
+  });
+
+  let overallStatus: 'success' | 'failed' | 'publishing' | 'partial';
+  if (failedCount === 0 && successCount > 0) {
+    overallStatus = 'success';
+  } else if (successCount === 0 && failedCount > 0) {
+    overallStatus = 'failed';
+  } else if (successCount > 0 && failedCount > 0) {
+    overallStatus = 'partial';
+  } else {
+    overallStatus = 'publishing';
+  }
+
+  return { groups, successCount, failedCount, totalCount, overallStatus };
+}
+
+const pr1Result = generateMockPublishGroups(['g1']);
+const pr2Result = generateMockPublishGroups(['g1']);
+const pr3Result = generateMockPublishGroups(['g1', 'g2', 'g3', 'g4', 'g5']);
+const pr5Result = generateMockPublishGroups(['g2']);
+
 export const mockPublishRecords: PublishRecord[] = [
   {
     id: 'pr1',
@@ -315,7 +385,12 @@ export const mockPublishRecords: PublishRecord[] = [
     screenGroupName: '1楼主入口组',
     publishTime: new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
     operator: '张三',
-    status: 'success',
+    status: pr1Result.overallStatus,
+    operationType: 'publish',
+    groups: pr1Result.groups,
+    successCount: pr1Result.successCount,
+    failedCount: pr1Result.failedCount,
+    totalCount: pr1Result.totalCount,
   },
   {
     id: 'pr2',
@@ -325,17 +400,27 @@ export const mockPublishRecords: PublishRecord[] = [
     screenGroupName: '1楼主入口组',
     publishTime: new Date(today.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString(),
     operator: '张三',
-    status: 'success',
+    status: pr2Result.overallStatus,
+    operationType: 'publish',
+    groups: pr2Result.groups,
+    successCount: pr2Result.successCount,
+    failedCount: pr2Result.failedCount,
+    totalCount: pr2Result.totalCount,
   },
   {
     id: 'pr3',
     type: 'emergency',
     targetId: 'e1',
     targetName: '突发天气预警',
-    screenGroupName: '全楼层',
+    screenGroupName: '1楼主入口组、2楼餐饮组、3楼服饰组、4楼娱乐组、B1超市组',
     publishTime: new Date(today.getTime() - 2 * 60 * 60 * 1000).toISOString(),
     operator: '运营主管',
-    status: 'success',
+    status: pr3Result.overallStatus,
+    operationType: 'publish',
+    groups: pr3Result.groups,
+    successCount: pr3Result.successCount,
+    failedCount: pr3Result.failedCount,
+    totalCount: pr3Result.totalCount,
   },
   {
     id: 'pr4',
@@ -346,6 +431,20 @@ export const mockPublishRecords: PublishRecord[] = [
     publishTime: new Date(today.getTime() - 30 * 60 * 1000).toISOString(),
     operator: '赵六',
     status: 'publishing',
+    operationType: 'publish',
+    groups: [
+      {
+        groupId: 'g3',
+        groupName: '3楼服饰组',
+        screens: [
+          { screenId: 's7', screenName: '3楼服饰区屏', status: 'publishing' },
+          { screenId: 's8', screenName: '3楼儿童区屏', status: 'publishing' },
+        ],
+      },
+    ],
+    successCount: 0,
+    failedCount: 0,
+    totalCount: 2,
   },
   {
     id: 'pr5',
@@ -355,7 +454,12 @@ export const mockPublishRecords: PublishRecord[] = [
     screenGroupName: '2楼餐饮组',
     publishTime: new Date(today.getTime() - 10 * 24 * 60 * 60 * 1000).toISOString(),
     operator: '李四',
-    status: 'failed',
-    detail: '屏幕s4离线，发布失败',
+    status: pr5Result.overallStatus,
+    operationType: 'publish',
+    groups: pr5Result.groups,
+    successCount: pr5Result.successCount,
+    failedCount: pr5Result.failedCount,
+    totalCount: pr5Result.totalCount,
+    detail: `发布完成（成功 ${pr5Result.successCount} 台，失败 ${pr5Result.failedCount} 台）`,
   },
 ];

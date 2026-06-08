@@ -132,18 +132,22 @@ export default function PublishRecordPage() {
       onOk: () => {
         const newRecordId = `pr${Date.now()}`;
 
-        let groups: PublishGroupResult[] | undefined;
+        let groups: PublishGroupResult[] = [];
         if (record.groups && record.groups.length > 0) {
           if (failedOnly) {
-            groups = record.groups.map((group) => ({
-              ...group,
-              screens: group.screens.map((screen) => {
-                if (screen.status === 'failed') {
-                  return { ...screen, status: 'publishing' as const, errorMessage: undefined };
-                }
-                return screen;
-              }),
-            }));
+            record.groups.forEach((group) => {
+              const failedScreens = group.screens.filter((s) => s.status === 'failed');
+              if (failedScreens.length > 0) {
+                groups.push({
+                  ...group,
+                  screens: failedScreens.map((screen) => ({
+                    ...screen,
+                    status: 'publishing' as const,
+                    errorMessage: undefined,
+                  })),
+                });
+              }
+            });
           } else {
             groups = record.groups.map((group) => ({
               ...group,
@@ -155,6 +159,8 @@ export default function PublishRecordPage() {
             }));
           }
         }
+
+        const totalCount = groups.reduce((sum, g) => sum + g.screens.length, 0);
 
         addPublishRecord({
           id: newRecordId,
@@ -170,45 +176,34 @@ export default function PublishRecordPage() {
           groups,
           successCount: 0,
           failedCount: 0,
-          totalCount: record.totalCount,
+          totalCount,
         });
         message.success('已发起重新发布');
 
         setTimeout(() => {
-          let finalGroups: PublishGroupResult[] | undefined;
-          if (groups) {
-            finalGroups = groups.map((group) => ({
-              ...group,
-              screens: group.screens.map((screen) => {
-                if (screen.status === 'publishing') {
-                  const screenData = screens.find((s) => s.id === screen.screenId);
-                  const isSuccess = screenData?.status === 'online';
-                  return {
-                    ...screen,
-                    status: isSuccess ? ('success' as const) : ('failed' as const),
-                    errorMessage: isSuccess ? undefined : '屏幕离线，发布失败',
-                    finishedTime: new Date().toISOString(),
-                  };
-                }
-                return screen;
-              }),
-            }));
-            const stats = calculatePublishStats(finalGroups);
-            updatePublishRecord(newRecordId, {
-              status: stats.overallStatus,
-              detail: failedOnly
-                ? `重发失败屏幕完成（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`
-                : `重新发布成功（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`,
-              groups: finalGroups,
-              successCount: stats.successCount,
-              failedCount: stats.failedCount,
-            });
-          } else {
-            updatePublishRecord(newRecordId, {
-              status: 'success',
-              detail: failedOnly ? '重发失败屏幕完成' : '重新发布成功',
-            });
-          }
+          const finalGroups = groups.map((group) => ({
+            ...group,
+            screens: group.screens.map((screen) => {
+              const screenData = screens.find((s) => s.id === screen.screenId);
+              const isSuccess = screenData?.status === 'online';
+              return {
+                ...screen,
+                status: isSuccess ? ('success' as const) : ('failed' as const),
+                errorMessage: isSuccess ? undefined : '屏幕离线，发布失败',
+                finishedTime: new Date().toISOString(),
+              };
+            }),
+          }));
+          const stats = calculatePublishStats(finalGroups);
+          updatePublishRecord(newRecordId, {
+            status: stats.overallStatus,
+            detail: failedOnly
+              ? `重发失败屏幕完成（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`
+              : `重新发布成功（成功 ${stats.successCount} 台，失败 ${stats.failedCount} 台）`,
+            groups: finalGroups,
+            successCount: stats.successCount,
+            failedCount: stats.failedCount,
+          });
         }, 1500);
       },
     });

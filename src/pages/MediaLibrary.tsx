@@ -57,12 +57,15 @@ export default function MediaLibrary() {
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [batchModalVisible, setBatchModalVisible] = useState(false);
-  const [batchActionType, setBatchActionType] = useState<'tags' | 'validity' | 'status'>('tags');
+  const [batchActionType, setBatchActionType] = useState<'tags' | 'validity' | 'draft' | 'delete'>('tags');
   const [batchForm] = Form.useForm();
 
   const [cropRatio, setCropRatio] = useState<CropRatio>('16:9');
   const [cropPosX, setCropPosX] = useState(50);
   const [cropPosY, setCropPosY] = useState(50);
+
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
 
   const filteredMedia = useMemo(() => {
     return mediaItems.filter((item) => {
@@ -170,49 +173,56 @@ export default function MediaLibrary() {
   };
 
   const openBatchDraftModal = () => {
-    Modal.confirm({
-      title: '批量标记为草稿',
-      content: `确定将选中的 ${selectedIds.length} 个素材标记为草稿吗?`,
-      onOk: () => {
-        batchUpdateMedia(selectedIds, { status: 'draft' });
-        message.success(`已将 ${selectedIds.length} 个素材标记为草稿`);
-        setSelectedIds([]);
-      },
-    });
+    setBatchActionType('draft');
+    setBatchModalVisible(true);
   };
 
   const handleBatchDelete = () => {
-    Modal.confirm({
-      title: '批量删除',
-      content: `确定删除选中的 ${selectedIds.length} 个素材吗?此操作不可恢复。`,
-      okType: 'danger',
-      onOk: () => {
-        batchDeleteMedia(selectedIds);
-        message.success(`已删除 ${selectedIds.length} 个素材`);
-        setSelectedIds([]);
-      },
-    });
+    setBatchActionType('delete');
+    setBatchModalVisible(true);
   };
 
   const handleBatchSubmit = () => {
-    batchForm.validateFields().then((values) => {
+    const doSubmit = () => {
       if (batchActionType === 'tags') {
-        const newTags = values.tags || [];
-        const selectedMedia = mediaItems.filter((m) => selectedIds.includes(m.id));
-        selectedMedia.forEach((media) => {
-          const mergedTags = [...new Set([...media.tags, ...newTags])];
-          updateMedia(media.id, { tags: mergedTags });
+        batchForm.validateFields().then((values) => {
+          const newTags = values.tags || [];
+          const selectedMedia = mediaItems.filter((m) => selectedIds.includes(m.id));
+          selectedMedia.forEach((media) => {
+            const mergedTags = [...new Set([...media.tags, ...newTags])];
+            updateMedia(media.id, { tags: mergedTags });
+          });
+          message.success(`已为 ${selectedIds.length} 个素材添加标签`);
+          setBatchModalVisible(false);
+          setSelectedIds([]);
         });
-        message.success(`已为 ${selectedIds.length} 个素材添加标签`);
       } else if (batchActionType === 'validity') {
-        const validFrom = values.validRange[0].format('YYYY-MM-DD');
-        const validTo = values.validRange[1].format('YYYY-MM-DD');
-        batchUpdateMedia(selectedIds, { validFrom, validTo });
-        message.success(`已更新 ${selectedIds.length} 个素材的有效期`);
+        batchForm.validateFields().then((values) => {
+          const validFrom = values.validRange[0].format('YYYY-MM-DD');
+          const validTo = values.validRange[1].format('YYYY-MM-DD');
+          batchUpdateMedia(selectedIds, { validFrom, validTo });
+          message.success(`已更新 ${selectedIds.length} 个素材的有效期`);
+          setBatchModalVisible(false);
+          setSelectedIds([]);
+        });
+      } else if (batchActionType === 'draft') {
+        batchUpdateMedia(selectedIds, { status: 'draft' });
+        message.success(`已将 ${selectedIds.length} 个素材标记为草稿`);
+        setBatchModalVisible(false);
+        setSelectedIds([]);
+      } else if (batchActionType === 'delete') {
+        batchDeleteMedia(selectedIds);
+        message.success(`已删除 ${selectedIds.length} 个素材`);
+        setBatchModalVisible(false);
+        setSelectedIds([]);
       }
-      setBatchModalVisible(false);
-      setSelectedIds([]);
-    });
+    };
+
+    if (batchActionType === 'tags' || batchActionType === 'validity') {
+      doSubmit();
+    } else {
+      doSubmit();
+    }
   };
 
   const uploadProps: UploadProps = {
@@ -457,12 +467,17 @@ export default function MediaLibrary() {
                       <Image
                         src={media.thumbnail}
                         alt={media.name}
+                        preview={false}
                         style={{
                           width: '100%',
                           height: '100%',
                           ...getImageStyle(media.crop),
+                          cursor: 'pointer',
                         }}
-                        preview={{ src: media.url }}
+                        onClick={() => {
+                          setPreviewMedia(media);
+                          setPreviewVisible(true);
+                        }}
                       />
                     </div>
                     {media.crop && media.crop.ratio !== 'free' && (
@@ -704,18 +719,36 @@ export default function MediaLibrary() {
       </Modal>
 
       <Modal
-        title={batchActionType === 'tags' ? '批量添加标签' : '批量修改有效期'}
+        title={{
+          tags: '批量添加标签',
+          validity: '批量修改有效期',
+          draft: '批量标记为草稿',
+          delete: '批量删除素材',
+        }[batchActionType]}
         open={batchModalVisible}
         onOk={handleBatchSubmit}
         onCancel={() => setBatchModalVisible(false)}
         width={500}
-        okText="确认批量操作"
+        okText={batchActionType === 'delete' ? '确认删除' : '确认批量操作'}
+        okButtonProps={{ danger: batchActionType === 'delete' }}
       >
-        <div style={{ marginBottom: 16, padding: 12, background: '#e6f7ff', borderRadius: 6 }}>
-          <div style={{ color: '#1890ff', fontSize: 13 }}>
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            background: batchActionType === 'delete' ? '#fff1f0' : '#e6f7ff',
+            borderRadius: 6,
+          }}
+        >
+          <div
+            style={{
+              color: batchActionType === 'delete' ? '#ff4d4f' : '#1890ff',
+              fontSize: 13,
+            }}
+          >
             已选择 <strong>{selectedIds.length}</strong> 个素材，将对以下内容执行操作:
           </div>
-          <div style={{ marginTop: 8, color: '#666', fontSize: 12, maxHeight: 100, overflow: 'auto' }}>
+          <div style={{ marginTop: 8, color: '#666', fontSize: 12, maxHeight: 120, overflow: 'auto' }}>
             {mediaItems
               .filter((m) => selectedIds.includes(m.id))
               .map((m) => (
@@ -725,18 +758,30 @@ export default function MediaLibrary() {
               ))}
           </div>
         </div>
-        <Form form={batchForm} layout="vertical">
-          {batchActionType === 'tags' && (
-            <Form.Item name="tags" label="添加标签" rules={[{ required: true, message: '请输入标签' }]}>
-              <Select mode="tags" placeholder="输入标签后回车添加" />
-            </Form.Item>
-          )}
-          {batchActionType === 'validity' && (
-            <Form.Item name="validRange" label="新有效期" rules={[{ required: true, message: '请选择有效期' }]}>
-              <RangePicker style={{ width: '100%' }} />
-            </Form.Item>
-          )}
-        </Form>
+        {(batchActionType === 'tags' || batchActionType === 'validity') && (
+          <Form form={batchForm} layout="vertical">
+            {batchActionType === 'tags' && (
+              <Form.Item name="tags" label="添加标签" rules={[{ required: true, message: '请输入标签' }]}>
+                <Select mode="tags" placeholder="输入标签后回车添加" />
+              </Form.Item>
+            )}
+            {batchActionType === 'validity' && (
+              <Form.Item name="validRange" label="新有效期" rules={[{ required: true, message: '请选择有效期' }]}>
+                <RangePicker style={{ width: '100%' }} />
+              </Form.Item>
+            )}
+          </Form>
+        )}
+        {batchActionType === 'draft' && (
+          <div style={{ color: '#666', fontSize: 13, textAlign: 'center', padding: '12px 0' }}>
+            标记为草稿后，素材将不会在发布内容中显示
+          </div>
+        )}
+        {batchActionType === 'delete' && (
+          <div style={{ color: '#ff4d4f', fontSize: 13, textAlign: 'center', padding: '12px 0' }}>
+            此操作不可恢复，请谨慎操作
+          </div>
+        )}
       </Modal>
 
       <Modal
@@ -756,6 +801,55 @@ export default function MediaLibrary() {
         <div style={{ marginTop: 16, textAlign: 'right' }}>
           <Button onClick={() => setUploadModalVisible(false)}>关闭</Button>
         </div>
+      </Modal>
+
+      <Modal
+        title={previewMedia?.name || '素材预览'}
+        open={previewVisible}
+        onCancel={() => setPreviewVisible(false)}
+        footer={null}
+        width={720}
+        centered
+      >
+        {previewMedia && (
+          <div
+            style={{
+              width: '100%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#f5f5f5',
+              borderRadius: 8,
+              overflow: 'hidden',
+            }}
+          >
+            <div
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+                ...getCropStyle(previewMedia.crop),
+              }}
+            >
+              <img
+                src={previewMedia.url}
+                alt={previewMedia.name}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  ...getImageStyle(previewMedia.crop),
+                }}
+              />
+            </div>
+          </div>
+        )}
+        {previewMedia?.crop && previewMedia.crop.ratio !== 'free' && (
+          <div style={{ marginTop: 12, textAlign: 'center', color: '#666', fontSize: 13 }}>
+            裁剪比例: {previewMedia.crop.ratio}
+          </div>
+        )}
       </Modal>
     </div>
   );

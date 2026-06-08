@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import dayjs from 'dayjs';
 import {
   MediaItem,
   Screen,
@@ -20,6 +21,13 @@ import {
   mockApprovalRecords,
   mockPublishRecords,
 } from '../mock/data';
+
+function computeMediaStatus(media: MediaItem): MediaItem['status'] {
+  if (media.status === 'draft') return 'draft';
+  const today = dayjs().startOf('day');
+  const validTo = dayjs(media.validTo).startOf('day');
+  return validTo.isBefore(today) ? 'expired' : 'active';
+}
 
 interface AppState {
   currentWindow: WindowKey;
@@ -92,9 +100,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
 
   updateMedia: (id, updates) => set((state) => ({
-    mediaItems: state.mediaItems.map((m) =>
-      m.id === id ? { ...m, ...updates } : m
-    ),
+    mediaItems: state.mediaItems.map((m) => {
+      if (m.id !== id) return m;
+      const updated = { ...m, ...updates };
+      if (updates.validFrom !== undefined || updates.validTo !== undefined) {
+        updated.status = computeMediaStatus(updated);
+      }
+      return updated;
+    }),
   })),
 
   deleteMedia: (id) => set((state) => ({
@@ -102,9 +115,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   })),
 
   batchUpdateMedia: (ids, updates) => set((state) => ({
-    mediaItems: state.mediaItems.map((m) =>
-      ids.includes(m.id) ? { ...m, ...updates } : m
-    ),
+    mediaItems: state.mediaItems.map((m) => {
+      if (!ids.includes(m.id)) return m;
+      const updated = { ...m, ...updates };
+      if (updates.validFrom !== undefined || updates.validTo !== undefined) {
+        updated.status = computeMediaStatus(updated);
+      }
+      return updated;
+    }),
   })),
 
   batchDeleteMedia: (ids) => set((state) => ({

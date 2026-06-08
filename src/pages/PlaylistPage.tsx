@@ -502,13 +502,30 @@ export default function PlaylistPage() {
                             {index + 1}
                           </div>
                           {media && (
-                            <Image
-                              width={50}
-                              height={28}
-                              src={media.thumbnail}
-                              style={{ borderRadius: 2, objectFit: 'cover' }}
-                              preview={false}
-                            />
+                            <div
+                              style={{
+                                width: 50,
+                                height: 28,
+                                borderRadius: 2,
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                background: '#f0f0f0',
+                                ...getCropStyle(media.crop),
+                              }}
+                            >
+                              <img
+                                src={media.thumbnail}
+                                alt={media.name}
+                                style={{
+                                  width: '100%',
+                                  height: '100%',
+                                  ...getImageStyle(media.crop),
+                                }}
+                              />
+                            </div>
                           )}
                           <div style={{ flex: 1, marginLeft: 12 }}>
                             <div style={{ fontWeight: 500, fontSize: 13 }}>
