@@ -111,6 +111,10 @@ export interface PublishScreenResult {
   status: 'success' | 'failed' | 'publishing';
   errorMessage?: string;
   finishedTime?: string;
+  floor?: number;
+  location?: string;
+  ip?: string;
+  screenStatus?: 'online' | 'offline' | 'error';
 }
 
 export interface PublishGroupResult {
